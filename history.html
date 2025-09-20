@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>History</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#000000">
+    <style>
+        body {
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .nav-bar {
+            background-color: #333;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .nav-bar a {
+            color: #fff;
+            text-decoration: none;
+            margin: 0 10px;
+            font-weight: bold;
+        }
+
+        .nav-bar a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .image-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .history-item {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 320px;
+            padding: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .history-item img {
+            max-width: 300px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .prompt-text {
+            font-size: 14px;
+            color: #333;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .delete-btn {
+            margin-top: 10px;
+            background-color: #ff4d4d;
+            color: #fff;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .delete-btn:hover {
+            background-color: #ff0000;
+        }
+
+        .broadcast-form {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .broadcast-form input {
+            padding: 5px;
+        }
+
+    </style>
+</head>
+
+<body>
+    <div class="nav-bar">
+        <a href="/">Camera / Home</a>
+    </div>
+
+    <h1>Saved Images History</h1>
+    <div class="broadcast-form">
+        <input type="text" id="bc-title" placeholder="Notification title" />
+        <input type="text" id="bc-body" placeholder="Notification message" />
+        <button id="bc-send">Send</button>
+    </div>
+    <div class="image-container" id="image-container"></div>
+
+    <script>
+        let vapidPublicKeyCache = null;
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function fetchVapidPublicKey() {
+            if (vapidPublicKeyCache) {
+                return vapidPublicKeyCache;
+            }
+            try {
+                const response = await fetch('/vapid-public-key', { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch public key (${response.status})`);
+                }
+                const data = await response.json();
+                if (!data || !data.publicKey) {
+                    throw new Error('Response did not include a publicKey value.');
+                }
+                vapidPublicKeyCache = data.publicKey;
+                return vapidPublicKeyCache;
+            } catch (err) {
+                console.error('Unable to load VAPID public key:', err);
+                return null;
+            }
+        }
+
+        async function registerPush() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+                console.warn('Push notifications are not supported in this browser.');
+                return;
+            }
+
+            const vapidPublicKey = await fetchVapidPublicKey();
+            if (!vapidPublicKey) {
+                console.warn('VAPID public key could not be loaded.');
+                return;
+            }
+
+            try {
+                let permission = Notification.permission;
+                if (permission !== 'granted') {
+                    permission = await Notification.requestPermission();
+                }
+
+                if (permission !== 'granted') {
+                    console.warn('Notification permission was not granted.');
+                    return;
+                }
+
+                const reg = await navigator.serviceWorker.ready;
+                let sub = await reg.pushManager.getSubscription();
+
+                if (!sub) {
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+                    });
+                }
+
+                const response = await fetch('/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(sub)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Subscription registration failed.');
+                }
+            } catch (err) {
+                console.error('Failed to register push subscription:', err);
+            }
+        }
+
+        fetch('/get_images')
+            .then(res => res.json())
+            .then(data => {
+                const container = document.getElementById('image-container');
+                data.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'history-item';
+
+                    if (item.original_image_base64) {
+                        const origImg = document.createElement('img');
+                        origImg.src = `data:image/jpeg;base64,${item.original_image_base64}`;
+                        itemDiv.appendChild(origImg);
+                    }
+
+                    const p = document.createElement('p');
+                    p.className = 'prompt-text';
+                    p.textContent = item.prompt_text || '(No prompt text)';
+                    itemDiv.appendChild(p);
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'delete-btn';
+                    delBtn.textContent = 'Delete';
+                    delBtn.addEventListener('click', () => {
+                        fetch(`/delete_image/${item.id}`, { method: 'DELETE' })
+                            .then(res => res.json())
+                            .then(result => {
+                                if (result.status === 'ok') {
+                                    itemDiv.remove();
+                                } else {
+                                    console.error('Delete failed:', result.message);
+                                }
+                            })
+                            .catch(err => console.error('Error deleting image:', err));
+                    });
+                    itemDiv.appendChild(delBtn);
+
+                    container.appendChild(itemDiv);
+                });
+            })
+            .catch(err => console.error('Error fetching images:', err));
+
+        document.getElementById('bc-send').addEventListener('click', async () => {
+            await registerPush();
+            const title = (document.getElementById('bc-title').value || '').trim();
+            const body = (document.getElementById('bc-body').value || '').trim();
+            try {
+                const res = await fetch('/broadcast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, body })
+                });
+                if (res.ok) {
+                    alert('Notification sent');
+                } else {
+                    alert('Broadcast failed: ' + (await res.text()));
+                }
+            } catch (err) {
+                alert('Broadcast failed: ' + (err instanceof Error ? err.message : String(err)));
+            }
+        });
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(() => registerPush())
+                .catch(err => console.error('Service worker registration failed:', err));
+        }
+    </script>
+</body>
+
+</html>
