@@ -49,10 +49,10 @@ VAPID_CLAIMS = {"sub": os.getenv("VAPID_EMAIL", "mailto:example@example.com")}
 
 # 1. Configure your PostgreSQL database connection
 #    Replace with your actual database credentials
-DB_HOST = 'dpg-cttejurqf0us73erd8s0-a'
-DB_NAME = 'database_aicamera'
-DB_USER = 'database_aicamera_user'
-DB_PASSWORD = 'K3qqkaQzJoSLEhOsMIOhlVYi9ktIaANz'
+DB_HOST = 'dpg-d3798lmr433s73ehqtg0-a'
+DB_NAME = 'whisper_1'
+DB_USER = 'whisper_1'
+DB_PASSWORD = 'V5YiP1mhbKxRQQwdbtrtBUpqsjmIVKj6'
 DB_PORT = 5432
 
 # 2. Connect to the PostgreSQL database
